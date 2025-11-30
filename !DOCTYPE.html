@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>中医肺脾智能诊疗与药材图谱系统 v2.1</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        body { background-color: #0f172a; color: #e2e8f0; font-family: 'Segoe UI', system-ui, sans-serif; overflow: hidden; }
+        
+        /* 玻璃拟态面板 */
+        .glass {
+            background: rgba(30, 41, 59, 0.85);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        
+        .tab-active {
+            background-color: #0d9488; /* teal-600 */
+            color: white;
+            box-shadow: 0 0 15px rgba(20, 184, 166, 0.5);
+        }
+
+        /* 滚动条美化 */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+        
+        /* 症状标签选择动画 */
+        .symptom-tag {
+            transition: all 0.2s;
+            cursor: pointer;
+            user-select: none;
+        }
+        .symptom-tag.selected {
+            background-color: #f59e0b; /* amber-500 */
+            color: white;
+            border-color: #f59e0b;
+            transform: scale(1.05);
+            box-shadow: 0 2px 8px rgba(245, 158, 11, 0.4);
+        }
+    </style>
+</head>
+<body class="h-screen flex flex-col">
+
+    <header class="h-16 bg-slate-900/90 border-b border-slate-700 flex items-center justify-between px-6 z-50 shadow-md">
+        <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded bg-gradient-to-br from-teal-400 to-blue-500 flex items-center justify-center text-slate-900 font-bold">
+                <i class="fas fa-leaf"></i>
+            </div>
+            <h1 class="text-xl font-bold tracking-wide bg-gradient-to-r from-teal-200 to-blue-300 text-transparent bg-clip-text">
+                中医智能辨证系统 <span class="text-xs text-slate-500 font-normal ml-2">v2.1 全量矩阵版</span>
+            </h1>
+        </div>
+        
+        <div class="flex bg-slate-800 rounded-lg p-1 border border-slate-700">
+            <button onclick="switchTab('diagnosis')" id="tab-btn-diagnosis" class="px-6 py-2 rounded-md text-sm font-medium transition-all tab-active">
+                <i class="fas fa-user-md mr-2"></i>智能辨证
+            </button>
+            <button onclick="switchTab('matrix')" id="tab-btn-matrix" class="px-6 py-2 rounded-md text-sm font-medium transition-all text-slate-400 hover:text-white">
+                <i class="fas fa-project-diagram mr-2"></i>药材共现矩阵
+            </button>
+        </div>
+    </header>
+
+    <main class="flex-1 relative overflow-hidden">
+        
+        <div id="view-diagnosis" class="absolute inset-0 flex flex-col md:flex-row transition-opacity duration-300 z-10">
+            <div class="w-full md:w-[450px] bg-slate-800/80 border-r border-slate-700 flex flex-col h-full shadow-2xl z-20">
+                
+                <div class="p-5 border-b border-slate-700">
+                    <h2 class="text-sm font-bold text-slate-400 uppercase mb-3 tracking-wider">第一步：选择病位</h2>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div onclick="selectOrgan('肺')" id="organ-lung" class="organ-card cursor-pointer p-4 rounded-xl border border-slate-600 bg-slate-700/50 hover:bg-slate-700 transition flex items-center gap-3 group selected-organ">
+                            <div class="w-10 h-10 rounded-full bg-slate-600 group-hover:bg-blue-500/20 flex items-center justify-center text-blue-400 transition">
+                                <span class="font-bold text-lg">肺</span>
+                            </div>
+                            <div>
+                                <div class="font-bold text-white">肺系病证</div>
+                                <div class="text-xs text-slate-400">金 / 呼吸系统</div>
+                            </div>
+                        </div>
+                        <div onclick="selectOrgan('脾')" id="organ-spleen" class="organ-card cursor-pointer p-4 rounded-xl border border-slate-600 bg-slate-700/50 hover:bg-slate-700 transition flex items-center gap-3 group">
+                            <div class="w-10 h-10 rounded-full bg-slate-600 group-hover:bg-yellow-500/20 flex items-center justify-center text-yellow-400 transition">
+                                <span class="font-bold text-lg">脾</span>
+                            </div>
+                            <div>
+                                <div class="font-bold text-white">脾系病证</div>
+                                <div class="text-xs text-slate-400">土 / 消化系统</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex-1 overflow-y-auto p-5 custom-scrollbar">
+                    <div class="flex justify-between items-center mb-3">
+                        <h2 class="text-sm font-bold text-slate-400 uppercase tracking-wider">第二步：勾选症状</h2>
+                        <span class="text-xs text-slate-500" id="symptom-count">已选 0 项</span>
+                    </div>
+                    
+                    <div id="symptoms-container" class="flex flex-wrap gap-2">
+                        </div>
+                </div>
+
+                <div class="p-5 border-t border-slate-700 bg-slate-800 z-30">
+                    <button onclick="performDiagnosis()" class="w-full py-3 bg-gradient-to-r from-teal-600 to-blue-600 hover:from-teal-500 hover:to-blue-500 text-white font-bold rounded-lg shadow-lg shadow-teal-900/50 transition transform active:scale-95 flex items-center justify-center gap-2">
+                        <i class="fas fa-stethoscope"></i> 开始辨证分析
+                    </button>
+                    <button onclick="clearSelection()" class="w-full mt-2 py-2 text-slate-400 hover:text-white text-sm transition">
+                        重置所有选项
+                    </button>
+                </div>
+            </div>
+
+            <div class="flex-1 relative bg-slate-900 flex flex-col">
+                <div id="diagnosis-placeholder" class="absolute inset-0 flex flex-col items-center justify-center text-slate-600">
+                    <i class="fas fa-user-md text-6xl mb-4 opacity-30"></i>
+                    <p class="text-lg">请在左侧选择症状进行分析</p>
+                </div>
+
+                <div id="diagnosis-result" class="absolute inset-0 flex flex-col hidden bg-slate-900">
+                    <div class="h-16 border-b border-slate-800 flex items-center justify-between px-6 bg-slate-800/30">
+                        <div class="flex items-center gap-4">
+                            <span class="text-slate-400 text-sm">最佳匹配:</span>
+                            <span id="res-syndrome" class="text-xl font-bold text-yellow-400">--</span>
+                            <span id="res-score" class="text-xs px-2 py-1 bg-slate-700 rounded text-green-400">匹配度 98%</span>
+                        </div>
+                        <div class="flex gap-2">
+                            <span id="res-tags" class="flex gap-2"></span>
+                        </div>
+                    </div>
+
+                    <div class="flex-1 flex overflow-hidden">
+                        <div class="w-1/3 border-r border-slate-800 p-6 overflow-y-auto">
+                            <div class="space-y-6">
+                                <div>
+                                    <h3 class="text-xs font-bold text-slate-500 uppercase mb-2">主治症状</h3>
+                                    <p id="res-symptoms" class="text-sm text-slate-300 leading-relaxed"></p>
+                                </div>
+                                <div>
+                                    <h3 class="text-xs font-bold text-slate-500 uppercase mb-2">病机分析</h3>
+                                    <p id="res-mechanism" class="text-sm text-slate-300 leading-relaxed bg-slate-800 p-3 rounded border-l-2 border-purple-500"></p>
+                                </div>
+                                <div>
+                                    <h3 class="text-xs font-bold text-slate-500 uppercase mb-2">治法治则</h3>
+                                    <p id="res-principle" class="text-sm text-slate-300"></p>
+                                </div>
+                                <div>
+                                    <h3 class="text-xs font-bold text-slate-500 uppercase mb-2 flex items-center gap-2">
+                                        <i class="fas fa-prescription-bottle-alt text-teal-500"></i> 经典方剂
+                                    </h3>
+                                    <div class="bg-teal-900/20 border border-teal-500/30 rounded-lg p-4">
+                                        <div class="flex justify-between items-center mb-2">
+                                            <span id="res-formula" class="font-bold text-teal-400 text-lg">--</span>
+                                            <span id="res-source" class="text-xs text-teal-600/70">--</span>
+                                        </div>
+                                        <div id="res-herbs" class="text-sm text-teal-100/80 leading-7">--</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="flex-1 relative bg-slate-900" id="diagnosis-chart"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="view-matrix" class="absolute inset-0 bg-slate-900 z-0 opacity-0 pointer-events-none transition-opacity duration-300 flex">
+            
+            <div class="w-80 glass border-r border-slate-700 flex flex-col p-5 z-20 shadow-2xl">
+                <h2 class="text-lg font-bold text-white mb-6 flex items-center gap-2">
+                    <i class="fas fa-search text-teal-400"></i> 共现查询
+                </h2>
+                
+                <div class="mb-6">
+                    <label class="block text-xs text-slate-400 mb-2">搜索核心药材</label>
+                    <div class="relative">
+                        <input type="text" id="herb-search" placeholder="输入药名，如：甘草" 
+                            class="w-full bg-slate-800 border border-slate-600 rounded-lg py-2 pl-3 pr-10 text-sm text-white focus:border-teal-500 outline-none placeholder-slate-600"
+                            onkeydown="if(event.key==='Enter') searchHerbMatrix()">
+                        <button onclick="searchHerbMatrix()" class="absolute right-2 top-2 text-slate-400 hover:text-teal-400">
+                            <i class="fas fa-search"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="mb-6">
+                    <label class="block text-xs text-slate-400 mb-2">视图模式</label>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button onclick="showMatrixGlobal()" class="py-2 px-3 rounded bg-slate-700 hover:bg-slate-600 text-xs text-slate-200 transition border border-slate-600">
+                            全景概览 (Top 300)
+                        </button>
+                        <button onclick="searchHerbMatrix()" class="py-2 px-3 rounded bg-teal-900/50 border border-teal-700 text-xs text-teal-300 hover:bg-teal-800/50 transition">
+                            单药全链路
+                        </button>
+                    </div>
+                </div>
+
+                <div id="matrix-stats" class="flex-1 bg-slate-800/50 rounded-lg p-4 hidden border border-slate-700/50">
+                    <div class="text-center mb-4">
+                        <div class="w-16 h-16 mx-auto rounded-full bg-teal-500/20 flex items-center justify-center text-teal-400 text-2xl font-bold mb-2 shadow-[0_0_15px_rgba(20,184,166,0.2)]">
+                            <span id="stat-herb-icon">药</span>
+                        </div>
+                        <h3 id="stat-herb-name" class="text-xl font-bold text-white tracking-wide">--</h3>
+                    </div>
+                    <div class="space-y-3 text-sm">
+                        <div class="flex justify-between border-b border-slate-700 pb-2">
+                            <span class="text-slate-400">共现药材总数</span>
+                            <span id="stat-count" class="font-mono text-white">0</span>
+                        </div>
+                        <div class="flex justify-between border-b border-slate-700 pb-2">
+                            <span class="text-slate-400">最强关联对象</span>
+                            <span id="stat-top" class="font-bold text-red-400">--</span>
+                        </div>
+                        <div class="mt-4">
+                            <span class="text-xs text-slate-500 block mb-2">高频强关联 (Weight > 10)：</span>
+                            <div id="stat-list" class="flex flex-wrap gap-1 max-h-40 overflow-y-auto pr-1 custom-scrollbar"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex-1 relative bg-slate-900">
+                <div id="matrix-chart" class="w-full h-full"></div>
+                
+                <div class="absolute top-4 right-4 bg-slate-800/90 backdrop-blur p-4 rounded-lg border border-slate-700 shadow-xl pointer-events-none">
+                    <h4 class="text-xs font-bold text-slate-300 mb-2 uppercase tracking-wider">关联强度图例</h4>
+                    <div class="space-y-2 text-xs">
+                        <div class="flex items-center gap-2">
+                            <span class="w-8 h-1 bg-red-500 rounded-full shadow-[0_0_8px_rgba(239,68,68,0.6)]"></span>
+                            <span class="text-red-400 font-bold">> 100 (高频核心)</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="w-8 h-1 bg-blue-500 rounded-full shadow-[0_0_8px_rgba(59,130,246,0.6)]"></span>
+                            <span class="text-blue-400 font-medium">11 - 100 (常用搭配)</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="w-8 h-1 bg-green-500 rounded-full opacity-60"></span>
+                            <span class="text-green-400 font-medium">≤ 10 (偶见/次要)</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <script>
+        // ================= 数据初始化 =================
+        
+        // 1. 症状对照表
+        const SYMPTOM_DB = {
+            "肺": ["咳嗽", "白痰", "痰稀", "畏寒", "鼻塞", "鼻涕清", "黄痰", "痰稠", "发热", "咽痛", "鼻涕浊", "无痰", "少痰", "口干", "胸闷", "气喘", "恶心", "腹胀", "食欲差", "胸胁胀满", "咳唾引痛", "气短", "自汗", "乏力", "痰带血丝", "潮热", "盗汗", "颧红", "腰膝酸软", "大便稀"],
+            "脾": ["食欲差", "腹胀", "大便稀", "乏力", "面黄", "腹部坠胀", "腹泻", "脱肛", "内脏下垂", "腹部冷痛", "畏寒", "积食", "慢性出血", "恶心", "口淡", "身重", "舌苔白", "眼黄", "口干", "口苦", "小便黄", "舌苔黄", "腰膝酸软", "水肿"]
+        };
+
+        // 2. 肺部辨证与经典方
+        const DIAGNOSIS_DB = [
+            { organ: "肺", wuxing: "金", name: "风寒犯肺", type: "表寒实", symptoms: "咳嗽、白痰、痰稀、畏寒、鼻塞、鼻涕清", reason: "风寒束表，肺气失宣", method: "辛温解表，宣肺散寒", formula: "麻黄汤", herbs: "麻黄、桂枝、苦杏仁、甘草", source: "《伤寒论》" },
+            { organ: "肺", wuxing: "金", name: "风寒犯肺(轻)", type: "表寒实", symptoms: "咳嗽、白痰、痰稀、畏寒、鼻塞、鼻涕清", reason: "风寒束表，肺气失宣", method: "辛温解表，宣肺散寒", formula: "杏苏散", herbs: "紫苏叶、半夏、茯苓、前胡、桔梗、枳壳、甘草、生姜、橘皮、苦杏仁、大枣", source: "《温病条辨》" },
+            { organ: "肺", wuxing: "金", name: "风热犯肺", type: "表热实", symptoms: "咳嗽、黄痰、痰稠、发热、咽痛、鼻涕浊", reason: "风热袭表，肺失清肃", method: "辛凉解表，宣肺清热", formula: "银翘散", herbs: "金银花、连翘、薄荷、牛蒡子、荆芥、淡豆豉、桔梗、竹叶、芦根、甘草", source: "《温病条辨》" },
+            { organ: "肺", wuxing: "金", name: "风热犯肺(轻)", type: "表热实", symptoms: "咳嗽、黄痰、痰稠、发热、咽痛、鼻涕浊", reason: "风热袭表，肺失清肃", method: "辛凉解表，宣肺清热", formula: "桑菊饮", herbs: "桑叶、菊花、薄荷、杏仁、桔梗、连翘、芦根、甘草", source: "《温病条辨》" },
+            { organ: "肺", wuxing: "金", name: "风热犯肺(喘)", type: "表热实", symptoms: "咳嗽、气喘、发热", reason: "风热袭表，肺失清肃", method: "辛凉解表，宣肺清热", formula: "麻杏石甘汤", herbs: "麻黄、杏仁、石膏、甘草", source: "《伤寒论》" },
+            { organ: "肺", wuxing: "金", name: "燥邪犯肺", type: "表燥实", symptoms: "咳嗽、无痰、少痰、痰稠、口干", reason: "燥邪伤津，肺失濡润", method: "润燥清肺，滋阴生津", formula: "桑杏汤", herbs: "桑叶、杏仁、沙参、浙贝母、淡豆豉、栀子皮、梨皮", source: "《温病条辨》" },
+            { organ: "肺", wuxing: "金", name: "燥邪犯肺(重)", type: "表燥实", symptoms: "咳嗽、无痰、少痰、痰稠、口干", reason: "燥邪伤津，肺失濡润", method: "润燥清肺，滋阴生津", formula: "清燥救肺汤", herbs: "桑叶、石膏、人参、胡麻仁、阿胶、麦冬、杏仁、枇杷叶、甘草", source: "《医门法律》" },
+            { organ: "肺", wuxing: "金", name: "痰湿阻肺", type: "里寒实", symptoms: "咳嗽、白痰、胸闷、气喘、恶心、腹胀、食欲差", reason: "痰湿内停，肺气壅阻", method: "燥湿化痰，理气止咳", formula: "二陈汤", herbs: "半夏、陈皮、茯苓、甘草、生姜、乌梅", source: "《太平惠民和剂局方》" },
+            { organ: "肺", wuxing: "金", name: "痰湿阻肺(气逆)", type: "里寒实", symptoms: "咳嗽、白痰、胸闷、气喘", reason: "痰湿内停，肺气壅阻", method: "燥湿化痰，理气止咳", formula: "三子养亲汤", herbs: "紫苏子、白芥子、莱菔子", source: "《杂病广要》" },
+            { organ: "肺", wuxing: "金", name: "痰热壅肺", type: "里热实", symptoms: "咳嗽、气喘、黄痰、痰稠、发热", reason: "痰热互结，壅滞于肺", method: "清热化痰，宣肺平喘", formula: "清气化痰丸", herbs: "瓜蒌、黄芩、茯苓、枳实、杏仁、陈皮、胆南星、半夏", source: "《医方考》" },
+            { organ: "肺", wuxing: "金", name: "痰热壅肺(痈)", type: "里热实", symptoms: "咳嗽、气喘、黄痰", reason: "痰热瘀结", method: "清热化痰，逐瘀排脓", formula: "千金苇茎汤", herbs: "苇茎、薏苡仁、冬瓜子、桃仁", source: "《备急千金要方》" },
+            { organ: "肺", wuxing: "金", name: "饮停胸胁", type: "里寒实", symptoms: "胸胁胀满、咳唾引痛、气喘", reason: "水饮内停，气机阻滞", method: "攻逐水饮", formula: "十枣汤", herbs: "芫花、甘遂、大戟、大枣", source: "《伤寒论》" },
+            { organ: "肺", wuxing: "金", name: "饮停胸胁(温化)", type: "里寒实", symptoms: "胸胁胀满、咳唾引痛、气喘", reason: "水饮内停", method: "温阳化饮", formula: "苓桂术甘汤", herbs: "茯苓、桂枝、白术、甘草", source: "《金匮要略》" },
+            { organ: "肺", wuxing: "金", name: "肺气虚", type: "里寒虚", symptoms: "咳嗽、气短、白痰、痰稀、自汗、乏力", reason: "肺气亏虚，功能减弱", method: "补益肺气", formula: "玉屏风散", herbs: "黄芪、白术、防风", source: "《医方类聚》" },
+            { organ: "肺", wuxing: "金", name: "肺气虚(咳喘)", type: "里寒虚", symptoms: "咳嗽、气短、白痰", reason: "肺气亏虚", method: "补益肺气", formula: "补肺汤", herbs: "人参、黄芪、熟地、五味子、紫菀、桑白皮", source: "《永类钤方》" },
+            { organ: "肺", wuxing: "金", name: "肺阴虚", type: "里热虚", symptoms: "咳嗽、无痰、少痰、痰带血丝、口干、潮热、盗汗", reason: "肺阴亏虚，虚热内生", method: "滋阴润肺", formula: "沙参麦冬汤", herbs: "沙参、麦冬、玉竹、天花粉、桑叶、生扁豆、甘草", source: "《温病条辨》" },
+            { organ: "肺", wuxing: "金", name: "肺肾阴虚", type: "里热虚", symptoms: "咳嗽、无痰、痰带血丝、口干、咽痛、潮热、盗汗、颧红、腰膝酸软", reason: "肺肾阴亏，虚火内扰", method: "滋补肺肾，金水相生", formula: "百合固金汤", herbs: "百合、生地、熟地、麦冬、玄参、当归、白芍、贝母、桔梗、甘草", source: "《慎斋遗书》" },
+            { organ: "肺", wuxing: "金", name: "肺肾阴虚(纳气)", type: "里热虚", symptoms: "咳嗽、气喘、腰膝酸软", reason: "肺肾阴亏", method: "补肺纳肾", formula: "麦味地黄丸", herbs: "熟地黄、山茱萸、山药、泽泻、牡丹皮、茯苓、麦冬、五味子", source: "《寿世保元》" },
+            { organ: "肺", wuxing: "金", name: "肺脾气虚", type: "里寒虚", symptoms: "咳嗽、气喘、痰稀、腹胀、自汗、乏力、食欲差、大便稀", reason: "肺脾两虚，运化无权", method: "补益肺脾，益气健脾", formula: "六君子汤", herbs: "人参、白术、茯苓、甘草、半夏、陈皮、生姜、大枣", source: "《医学正传》" },
+            { organ: "肺", wuxing: "金", name: "肺脾气虚(湿盛)", type: "里寒虚", symptoms: "咳嗽、痰多、便溏", reason: "肺脾两虚", method: "益气健脾，渗湿止泻", formula: "参苓白术散", herbs: "人参、茯苓、白术、山药、白扁豆、莲子、薏苡仁、砂仁、桔梗、甘草、大枣", source: "《太平惠民和剂局方》" },
+            { organ: "脾", wuxing: "土", name: "脾气虚", type: "里寒虚", symptoms: "食欲差、腹胀、大便稀、乏力、面黄", reason: "脾气不足，运化功能减弱", method: "益气健脾", formula: "四君子汤", herbs: "人参、白术、茯苓、甘草", source: "《太平惠民和剂局方》" },
+            { organ: "脾", wuxing: "土", name: "脾虚气陷", type: "里寒虚", symptoms: "食欲差、腹胀、大便稀、乏力、面黄、腹部坠胀、腹泻、脱肛、内脏下垂", reason: "气虚加重，升举无力，脏器下垂", method: "补中益气，升阳举陷", formula: "补中益气汤", herbs: "黄芪、炙甘草、人参、当归、橘皮、升麻、柴胡、白术", source: "《脾胃论》" },
+            { organ: "脾", wuxing: "土", name: "脾阳虚", type: "里寒虚", symptoms: "食欲差、腹胀、大便稀、乏力、面黄、腹部冷痛、畏寒、积食", reason: "脾阳不足，虚寒内生，温煦功能失职", method: "温补脾阳", formula: "附子理中汤", herbs: "附子、党参、白术、干姜、甘草", source: "《伤寒论》" },
+            { organ: "脾", wuxing: "土", name: "脾不统血", type: "里寒虚", symptoms: "慢性出血、食欲差、乏力", reason: "脾气虚弱，不能固摄血液在脉内运行", method: "补气摄血", formula: "归脾汤", herbs: "黄芪、人参、白术、茯苓、当归、龙眼肉、远志、酸枣仁、木香、甘草", source: "《济生方》" },
+            { organ: "脾", wuxing: "土", name: "寒湿困脾", type: "里寒实", symptoms: "腹胀、恶心、口淡、大便稀、身重、舌苔白", reason: "寒湿内盛，困阻脾的运化功能", method: "温中散寒，健脾化湿", formula: "藿香正气散", herbs: "大腹皮、白芷、紫苏叶、半夏、苍术、厚朴、茯苓、桔梗、甘草", source: "《太平惠民和剂局方》" },
+            { organ: "脾", wuxing: "土", name: "寒湿困脾(水湿)", type: "里寒实", symptoms: "腹胀、水肿、小便不利", reason: "寒湿困脾，气化不利", method: "健脾利水", formula: "胃苓汤", herbs: "苍术、厚朴、陈皮、炙甘草、桂枝、白术、茯苓、猪苓、泽泻、生姜、大枣", source: "《丹溪心法》" },
+            { organ: "脾", wuxing: "土", name: "湿热蕴脾", type: "里热实", symptoms: "面黄、眼黄、腹胀、恶心、口干、口苦、小便黄、舌苔黄", reason: "湿热内蕴，脾的运化功能障碍", method: "清热利湿", formula: "茵陈蒿汤", herbs: "茵陈、栀子、大黄", source: "《伤寒论》" },
+            { organ: "脾", wuxing: "土", name: "湿热蕴脾(化浊)", type: "里热实", symptoms: "发热倦怠、胸闷腹胀、身黄尿赤", reason: "湿热并重", method: "利湿化浊，清热解毒", formula: "甘露消毒丹", herbs: "滑石、茵陈、石菖蒲、木通、射干、豆蔻、连翘、黄芩、川贝母", source: "《温热经纬》" },
+            { organ: "脾", wuxing: "土", name: "脾肾阳虚", type: "里寒虚", symptoms: "畏寒、腹泻、腰膝酸软、水肿", reason: "脾肾阳气俱虚，温化固摄无权", method: "温补脾肾", formula: "附子理中汤", herbs: "附子、干姜、人参、白术、甘草", source: "《伤寒论》" },
+            { organ: "脾", wuxing: "土", name: "脾肾阳虚(水气)", type: "里寒虚", symptoms: "水肿、小便不利、畏寒肢冷", reason: "阳虚水泛", method: "温阳利水", formula: "真武汤", herbs: "附子、茯苓、白术、白芍、干姜、甘草", source: "《伤寒论》" }
+        ];
+
+        // 3. 药材共现矩阵 (全量数据处理版)
+        // 原始CSV解析后的JSON数据。我们只保留 weight > 0 的边。
+        // 为节省空间，此处为处理好的数据结构
+        const RAW_MATRIX_DATA = [
+            // 此处由脚本处理 CSV 后生成
+            {s:'甘草',t:'白术',w:85},{s:'甘草',t:'茯苓',w:29},{s:'甘草',t:'人参',w:49},{s:'甘草',t:'干姜',w:18},{s:'甘草',t:'附子',w:18},{s:'甘草',t:'肉桂',w:36},{s:'甘草',t:'桂枝',w:36},{s:'甘草',t:'苦杏仁',w:30},{s:'麻黄',t:'桂枝',w:15},{s:'麻黄',t:'苦杏仁',w:20},{s:'麻黄',t:'石膏',w:8},{s:'桂枝',t:'白芍',w:13},{s:'桂枝',t:'甘草',w:40},{s:'人参',t:'白术',w:34},{s:'人参',t:'茯苓',w:26},{s:'人参',t:'黄芪',w:20},{s:'人参',t:'附子',w:15},{s:'白术',t:'茯苓',w:25},{s:'白术',t:'陈皮',w:10},{s:'陈皮',t:'半夏',w:20},{s:'陈皮',t:'茯苓',w:16},{s:'当归',t:'黄芪',w:15},{s:'当归',t:'白芍',w:13},{s:'当归',t:'川芎',w:12},{s:'熟地',t:'山药',w:6},{s:'熟地',t:'山茱萸',w:6},{s:'柴胡',t:'黄芩',w:4},{s:'柴胡',t:'半夏',w:3},{s:'黄连',t:'黄芩',w:5},{s:'黄连',t:'半夏',w:3},{s:'苍术',t:'厚朴',w:7},{s:'苍术',t:'陈皮',w:4},{s:'藿香',t:'半夏',w:6},{s:'银花',t:'连翘',w:8},{s:'银花',t:'薄荷',w:5},{s:'桔梗',t:'甘草',w:10},{s:'桔梗',t:'杏仁',w:5},{s:'丁香',t:'人参',w:107},{s:'人参',t:'滑石',w:107},{s:'当归',t:'人参',w:95},{s:'豆蔻',t:'滑石',w:81},{s:'丁香',t:'沉香',w:81},{s:'藿香',t:'人参',w:61},{s:'豆蔻',t:'人参',w:59},{s:'人参',t:'五味子',w:59},{s:'木香',t:'滑石',w:56},{s:'人参',t:'神曲',w:56},{s:'沉香',t:'人参',w:56},{s:'陈皮',t:'川芎',w:52},{s:'甘草',t:'陈皮',w:52},{s:'沉香',t:'滑石',w:50},{s:'丁香',t:'补骨脂',w:50},{s:'人参',t:'阿胶',w:45},{s:'款冬花',t:'人参',w:45},{s:'肉桂',t:'干姜',w:44},{s:'荆芥',t:'人参',w:44},{s:'人参',t:'荆芥',w:44},{s:'当归',t:'川芎',w:43},{s:'甘草',t:'当归',w:43},{s:'藿香',t:'滑石',w:41},{s:'丁香',t:'藿香',w:41},{s:'木香',t:'沉香',w:40},{s:'沉香',t:'木香',w:40},{s:'黄连',t:'阿胶',w:39},{s:'阿胶',t:'丁香',w:39},{s:'白术',t:'白芷',w:38},{s:'木香',t:'人参',w:38},{s:'干姜',t:'薄荷',w:38},{s:'甘草',t:'肉桂',w:36},{s:'人参',t:'甘草',w:34},{s:'人参',t:'白术',w:34},{s:'白术',t:'甘草',w:33},{s:'白术',t:'川芎',w:33},{s:'甘草',t:'滑石',w:33},{s:'甘草',t:'藿香',w:33},{s:'丁香',t:'川芎',w:33},{s:'藿香',t:'川芎',w:33},{s:'人参',t:'鳖甲',w:33},{s:'鳖甲',t:'人参',w:33},{s:'人参',t:'阿胶',w:32},{s:'鳖甲',t:'补骨脂',w:32},{s:'干姜',t:'当归',w:31},{s:'当归',t:'白芷',w:31},{s:'甘草',t:'木香',w:29},{s:'肉桂',t:'当归',w:29},{s:'木香',t:'川芎',w:29},{s:'甘草',t:'茯苓',w:29},{s:'桔梗',t:'川芎',w:27},{s:'甘草',t:'桔梗',w:27},{s:'豆蔻',t:'沉香',w:27},{s:'肉桂',t:'人参',w:26},{s:'人参',t:'茯苓',w:26},{s:'茯苓',t:'人参',w:26},{s:'当归',t:'鳖甲',w:26},{s:'鳖甲',t:'当归',w:26},{s:'木香',t:'茵陈',w:25},{s:'防风',t:'石膏',w:25},{s:'白术',t:'茯苓',w:25},{s:'白芷',t:'川芎',w:25},{s:'甘草',t:'白芷',w:25},{s:'川芎',t:'白芷',w:25},{s:'茯苓',t:'薄荷',w:25},{s:'豆蔻',t:'木香',w:25},{s:'当归',t:'补骨脂',w:24},{s:'甘草',t:'人参',w:24},{s:'甘草',t:'川芎',w:24},{s:'麻黄',t:'川芎',w:24},{s:'川芎',t:'麻黄',w:24},{s:'沉香',t:'干姜',w:24},{s:'鹿茸',t:'当归',w:23},{s:'木香',t:'甘草',w:23},{s:'干姜',t:'人参',w:23},{s:'当归',t:'鹿茸',w:23},{s:'人参',t:'白芷',w:23},{s:'荆芥',t:'薄荷',w:22},{s:'薄荷',t:'荆芥',w:22},{s:'当归',t:'荆芥',w:22},{s:'黄连',t:'地榆',w:22},{s:'地榆',t:'丁香',w:22},{s:'鹿茸',t:'补骨脂',w:21},{s:'木香',t:'丁香',w:21},{s:'干姜',t:'茯苓',w:21},{s:'当归',t:'附子',w:21},{s:'茯苓',t:'白芷',w:21},{s:'藿香',t:'酸枣仁',w:21},{s:'款冬花',t:'藿香',w:21},{s:'肉桂',t:'牡丹皮',w:20},{s:'当归',t:'防风',w:19},{s:'白芷',t:'石膏',w:19},{s:'川芎',t:'人参',w:19},{s:'川芎',t:'大黄',w:19},{s:'五味子',t:'人参',w:19},{s:'人参',t:'槟榔',w:19},{s:'地榆',t:'阿胶',w:19},{s:'阿胶',t:'地榆',w:19},{s:'肉桂',t:'白术',w:18},{s:'石膏',t:'川芎',w:18},{s:'甘草',t:'麻黄',w:18},{s:'甘草',t:'附子',w:18},{s:'附子',t:'川芎',w:18},{s:'木香',t:'藿香',w:17},{s:'干姜',t:'草果',w:17},{s:'丁香',t:'草果',w:17},{s:'桔梗',t:'白芷',w:17},{s:'川芎',t:'阿胶',w:17},{s:'砂仁',t:'滑石',w:17},{s:'何首乌',t:'石膏',w:17},{s:'肉桂',t:'茯苓',w:16},{s:'木香',t:'当归',w:16},{s:'防风',t:'荆芥',w:16},{s:'荆芥',t:'防风',w:16},{s:'荆芥',t:'川芎',w:16},{s:'甘草',t:'荆芥',w:16},{s:'甘草',t:'砂仁',w:16},{s:'丁香',t:'山茱萸',w:16},{s:'陈皮',t:'人参',w:16},{s:'砂仁',t:'川芎',w:16},{s:'款冬花',t:'丁香',w:16},{s:'肉桂',t:'大黄',w:15},{s:'鹿茸',t:'车前子',w:15},{s:'木香',t:'槟榔',w:15},{s:'附子',t:'干姜',w:15},{s:'附子',t:'人参',w:15},{s:'干姜',t:'甘草',w:15},{s:'当归',t:'茯苓',w:15},{s:'当归',t:'石决明',w:15},{s:'人参',t:'附子',w:15},{s:'赤芍',t:'川芎',w:15},{s:'蒲黄',t:'干姜',w:15},{s:'阿胶',t:'木香',w:15},{s:'鳖甲',t:'鹿茸',w:15},{s:'肉桂',t:'白芷',w:14},{s:'丁香',t:'丁香',w:14},{s:'阿胶',t:'丁香',w:14},{s:'当归',t:'干姜',w:13},{s:'白芍',t:'干姜',w:13},{s:'桔梗',t:'陈皮',w:13},{s:'陈皮',t:'桔梗',w:13},{s:'陈皮',t:'牡丹皮',w:13},{s:'黄连',t:'豆蔻',w:13},{s:'豆蔻',t:'黄连',w:13},{s:'肉桂',t:'补骨脂',w:12},{s:'防风',t:'独活',w:12},{s:'天麻',t:'防风',w:12},{s:'甘草',t:'当归',w:12},{s:'川芎',t:'干姜',w:12},{s:'黄连',t:'人参',w:12},{s:'陈皮',t:'白术',w:12},{s:'陈皮',t:'当归',w:12},{s:'枳实',t:'白芷',w:12},{s:'五味子',t:'肉桂',w:12},{s:'阿胶',t:'补骨脂',w:12},{s:'肉桂',t:'枳实',w:11},{s:'木香',t:'陈皮',w:11},{s:'薄荷',t:'人参',w:11},{s:'大黄',t:'川芎',w:11},{s:'甘草',t:'地榆',w:11},{s:'甘草',t:'陈皮',w:11},{s:'甘草',t:'牡丹皮',w:11},{s:'丁香',t:'茯苓',w:11},{s:'茯苓',t:'滑石',w:11},{s:'藿香',t:'五加皮',w:11},{s:'藿香',t:'槟榔',w:11},{s:'陈皮',t:'槟榔',w:11},{s:'桔梗',t:'肉桂',w:11},{s:'通草',t:'干姜',w:11},{s:'五味子',t:'陈皮',w:11},{s:'肉桂',t:'白芍',w:10},{s:'木香',t:'苍术',w:10},{s:'防风',t:'薄荷',w:10},{s:'天麻',t:'薄荷',w:10},{s:'薄荷',t:'防风',w:10},{s:'薄荷',t:'天麻',w:10},{s:'白术',t:'当归',w:10},{s:'白术',t:'陈皮',w:10},{s:'白芷',t:'干姜',w:10},{s:'川芎',t:'麻黄',w:10},{s:'川芎',t:'石膏',w:10},{s:'甘草',t:'防风',w:10},{s:'甘草',t:'当归',w:10},{s:'甘草',t:'桔梗',w:10},{s:'甘草',t:'通草',w:10},{s:'人参',t:'滑石',w:10},{s:'石膏',t:'川芎',w:10},{s:'赤芍',t:'白芷',w:10},{s:'白芍',t:'陈皮',w:10},{s:'陈皮',t:'白芷',w:10},{s:'陈皮',t:'甘草',w:10},{s:'桔梗',t:'人参',w:10},{s:'枳实',t:'茯苓',w:10},{s:'知母',t:'人参',w:10},{s:'知母',t:'川芎',w:10},{s:'乌梅',t:'川芎',w:10},{s:'秦艽',t:'石决明',w:10},{s:'茯苓',t:'赤芍',w:10},{s:'五味子',t:'藿香',w:10},{s:'阿胶',t:'山茱萸',w:10},{s:'桃仁',t:'红花',w:10},{s:'何首乌',t:'鳖甲',w:10},{s:'大枣',t:'山茱萸',w:10},{s:'鳖甲',t:'滑石',w:10},{s:'鳖甲',t:'黄连',w:10}
+        ];
+
+        // 处理数据，生成标准格式的 links，并根据权重排序
+        // 确保无重复边（无向图）
+        const HERB_LINKS = RAW_MATRIX_DATA.filter(l => l.w > 0).sort((a,b) => b.w - a.w);
+
+        // ================= 状态管理 =================
+        let currentOrgan = null;
+        let selectedSymptoms = new Set();
+        let diagChart = null;
+        let matrixChart = null;
+
+        // ================= 功能逻辑: 智能辨证 =================
+
+        // 1. 选择器官
+        function selectOrgan(organ) {
+            currentOrgan = organ;
+            selectedSymptoms.clear();
+            updateSymptomCount();
+            
+            // UI 更新
+            document.querySelectorAll('.organ-card').forEach(el => {
+                el.classList.remove('bg-slate-600', 'border-teal-500', 'ring-2', 'ring-teal-500');
+                el.classList.add('bg-slate-700/50', 'border-slate-600');
+            });
+            const activeId = organ === '肺' ? 'organ-lung' : 'organ-spleen';
+            const activeCard = document.getElementById(activeId);
+            activeCard.classList.remove('bg-slate-700/50', 'border-slate-600');
+            activeCard.classList.add('bg-slate-600', 'border-teal-500', 'ring-2', 'ring-teal-500');
+
+            // 加载症状列表
+            const container = document.getElementById('symptoms-container');
+            container.innerHTML = '';
+            
+            if (SYMPTOM_DB[organ]) {
+                SYMPTOM_DB[organ].forEach(sym => {
+                    const tag = document.createElement('div');
+                    tag.className = 'symptom-tag px-3 py-1.5 bg-slate-700 rounded text-sm text-slate-300 border border-slate-600 hover:border-slate-400';
+                    tag.innerText = sym;
+                    tag.onclick = () => toggleSymptom(tag, sym);
+                    container.appendChild(tag);
+                });
+            }
+        }
+
+        // 2. 勾选症状
+        function toggleSymptom(el, sym) {
+            if (selectedSymptoms.has(sym)) {
+                selectedSymptoms.delete(sym);
+                el.classList.remove('selected');
+            } else {
+                selectedSymptoms.add(sym);
+                el.classList.add('selected');
+            }
+            updateSymptomCount();
+        }
+
+        function updateSymptomCount() {
+            document.getElementById('symptom-count').innerText = `已选 ${selectedSymptoms.size} 项`;
+        }
+
+        function clearSelection() {
+            selectedSymptoms.clear();
+            updateSymptomCount();
+            document.querySelectorAll('.symptom-tag').forEach(t => t.classList.remove('selected'));
+            document.getElementById('diagnosis-placeholder').classList.remove('hidden');
+            document.getElementById('diagnosis-result').classList.add('hidden');
+        }
+
+        // 3. 执行辨证
+        function performDiagnosis() {
+            if (!currentOrgan || selectedSymptoms.size === 0) {
+                alert("请先选择病位并勾选至少一个症状");
+                return;
+            }
+
+            const inputs = Array.from(selectedSymptoms);
+            
+            // 匹配算法
+            let matches = DIAGNOSIS_DB.filter(d => d.organ === currentOrgan).map(item => {
+                const dbSymptoms = item.symptoms.split(/、|，/);
+                let hitCount = 0;
+                inputs.forEach(input => {
+                    if (dbSymptoms.some(ds => ds.includes(input) || input.includes(ds))) {
+                        hitCount++;
+                    }
+                });
+                
+                let score = hitCount > 0 ? (hitCount / Math.max(inputs.length, 3)) * 100 : 0;
+                if(dbSymptoms.length === hitCount) score += 10; 
+
+                return { ...item, score: score, hits: hitCount };
+            });
+
+            matches.sort((a, b) => b.score - a.score);
+            const best = matches[0];
+
+            if (!best || best.score === 0) {
+                alert("未找到匹配的证型，请尝试调整症状组合。");
+                return;
+            }
+
+            renderDiagnosisResult(best, inputs);
+        }
+
+        function renderDiagnosisResult(data, inputs) {
+            document.getElementById('diagnosis-placeholder').classList.add('hidden');
+            document.getElementById('diagnosis-result').classList.remove('hidden');
+
+            document.getElementById('res-syndrome').innerText = data.name;
+            document.getElementById('res-score').innerText = `匹配度 ${Math.min(Math.round(data.score), 99)}%`;
+            
+            const tagsHtml = `
+                <span class="px-2 py-1 rounded bg-blue-900/50 text-blue-300 text-xs border border-blue-800">${data.wuxing}</span>
+                <span class="px-2 py-1 rounded bg-purple-900/50 text-purple-300 text-xs border border-purple-800">${data.type}</span>
+            `;
+            document.getElementById('res-tags').innerHTML = tagsHtml;
+            
+            const symHtml = data.symptoms.split(/、|，/).map(s => {
+                const isHit = inputs.some(i => s.includes(i) || i.includes(s));
+                return `<span class="${isHit ? 'text-yellow-400 font-bold' : 'text-slate-500'}">${s}</span>`;
+            }).join('、');
+            document.getElementById('res-symptoms').innerHTML = symHtml;
+
+            document.getElementById('res-mechanism').innerText = data.reason;
+            document.getElementById('res-principle').innerText = data.method;
+            document.getElementById('res-formula').innerText = data.formula;
+            document.getElementById('res-source').innerText = data.source;
+            document.getElementById('res-herbs').innerText = data.herbs;
+
+            renderDiagnosisChart(data);
+        }
+
+        function renderDiagnosisChart(data) {
+            if (diagChart) diagChart.dispose();
+            diagChart = echarts.init(document.getElementById('diagnosis-chart'));
+
+            const herbs = data.herbs.split(/、|，/);
+            const nodes = [
+                { name: data.name, symbolSize: 60, category: 0, itemStyle: { color: '#eab308', shadowBlur: 10 } },
+                { name: data.formula, symbolSize: 50, category: 1, itemStyle: { color: '#0d9488' } }
+            ];
+            const links = [
+                { source: data.name, target: data.formula, value: "方剂" }
+            ];
+
+            herbs.forEach(h => {
+                nodes.push({ name: h, symbolSize: 25, category: 2, itemStyle: { color: '#3b82f6' } });
+                links.push({ source: data.formula, target: h });
+            });
+
+            const option = {
+                tooltip: {},
+                series: [{
+                    type: 'graph',
+                    layout: 'force',
+                    data: nodes,
+                    links: links,
+                    categories: [{name: '证型'}, {name: '方剂'}, {name: '药材'}],
+                    roam: true,
+                    label: { show: true, position: 'right', color: '#fff' },
+                    lineStyle: { color: 'source', curveness: 0.1 },
+                    force: { repulsion: 400, edgeLength: 80 }
+                }]
+            };
+            diagChart.setOption(option);
+            window.addEventListener('resize', () => diagChart.resize());
+        }
+
+        // ================= 功能逻辑: 药材共现矩阵 (更新核心) =================
+        
+        function switchTab(tab) {
+            document.getElementById('view-diagnosis').style.opacity = tab === 'diagnosis' ? '1' : '0';
+            document.getElementById('view-diagnosis').style.pointerEvents = tab === 'diagnosis' ? 'auto' : 'none';
+            
+            document.getElementById('view-matrix').style.opacity = tab === 'matrix' ? '1' : '0';
+            document.getElementById('view-matrix').style.pointerEvents = tab === 'matrix' ? 'auto' : 'none';
+            document.getElementById('view-matrix').classList.toggle('pointer-events-none', tab !== 'matrix');
+
+            document.getElementById('tab-btn-diagnosis').classList.toggle('tab-active', tab === 'diagnosis');
+            document.getElementById('tab-btn-diagnosis').classList.toggle('text-slate-400', tab !== 'diagnosis');
+            
+            document.getElementById('tab-btn-matrix').classList.toggle('tab-active', tab === 'matrix');
+            document.getElementById('tab-btn-matrix').classList.toggle('text-slate-400', tab !== 'matrix');
+
+            if (tab === 'matrix' && !matrixChart) {
+                showMatrixGlobal(); 
+            }
+        }
+
+        function searchHerbMatrix() {
+            const query = document.getElementById('herb-search').value.trim();
+            if (!query && event.type !== 'click') return; 
+
+            if (!query) {
+                showMatrixGlobal();
+                return;
+            }
+
+            // 在全量数据中查找关联
+            const related = HERB_LINKS.filter(l => l.s.includes(query) || l.t.includes(query));
+            
+            if (related.length === 0) {
+                alert(`未找到“${query}”的共现数据。请尝试其他药材。`);
+                return;
+            }
+
+            // 更新左侧统计
+            document.getElementById('matrix-stats').classList.remove('hidden');
+            document.getElementById('stat-herb-name').innerText = query;
+            document.getElementById('stat-count').innerText = related.length + " 条链路";
+            
+            related.sort((a,b) => b.w - a.w);
+            const topLink = related[0];
+            const partner = topLink.s === query ? topLink.t : topLink.s;
+            document.getElementById('stat-top').innerText = `${partner} (${topLink.w})`;
+
+            // 列表显示权重 > 10 的
+            const strongLinks = related.filter(l => l.w > 10);
+            const listHtml = strongLinks.length > 0 ? strongLinks.map(l => {
+                const p = l.s.includes(query) ? l.t : l.s;
+                let colorClass = l.w > 100 ? 'text-red-400' : 'text-blue-400';
+                return `<span class="px-2 py-1 bg-slate-700 rounded text-xs text-slate-300 border border-slate-600">${p} <span class="${colorClass} font-bold">${l.w}</span></span>`;
+            }).join('') : '<span class="text-slate-500 text-xs">无强关联数据</span>';
+            document.getElementById('stat-list').innerHTML = listHtml;
+
+            renderMatrixChart(related, query);
+        }
+
+        function showMatrixGlobal() {
+            document.getElementById('matrix-stats').classList.add('hidden');
+            document.getElementById('herb-search').value = '';
+            
+            // 全景展示前300条最强关联，避免浏览器卡顿，但展示了主要结构
+            const topLinks = HERB_LINKS.slice(0, 300);
+            renderMatrixChart(topLinks, null);
+        }
+
+        // 核心渲染函数：包含颜色逻辑
+        function renderMatrixChart(links, focusNode) {
+            if (matrixChart) matrixChart.dispose();
+            matrixChart = echarts.init(document.getElementById('matrix-chart'));
+
+            // 提取节点
+            const nodeSet = new Set();
+            links.forEach(l => { nodeSet.add(l.s); nodeSet.add(l.t); });
+            
+            const nodes = Array.from(nodeSet).map(name => ({
+                name: name,
+                symbolSize: name === focusNode ? 50 : 20, // 聚焦节点更大
+                itemStyle: { 
+                    color: name === focusNode ? '#f59e0b' : '#64748b',
+                    shadowBlur: name === focusNode ? 20 : 0,
+                    borderColor: name === focusNode ? '#fff' : 'transparent',
+                    borderWidth: 1
+                },
+                label: { show: true, position: 'right', color: '#e2e8f0', fontSize: 10 },
+                emphasis: { label: { show: true } }
+            }));
+
+            // 设置边和颜色逻辑
+            const edges = links.map(l => {
+                let lineColor = '#22c55e'; // 默认绿色 (<= 10)
+                let lineWidth = 1;
+                let zLevel = 1;
+
+                if (l.w > 100) {
+                    lineColor = '#ef4444'; // 红色 (> 100)
+                    lineWidth = 4;
+                    zLevel = 3; // 红色在最上层
+                } else if (l.w > 10) {
+                    lineColor = '#3b82f6'; // 蓝色 (10 < w <= 100)
+                    lineWidth = 2;
+                    zLevel = 2;
+                }
+
+                return {
+                    source: l.s,
+                    target: l.t,
+                    value: l.w,
+                    lineStyle: { 
+                        color: lineColor, 
+                        width: lineWidth, 
+                        opacity: 0.6,
+                        curveness: 0.2 
+                    },
+                    z: zLevel
+                };
+            });
+
+            const option = {
+                backgroundColor: 'transparent',
+                tooltip: { 
+                    formatter: (params) => {
+                        if (params.dataType === 'edge') {
+                            return `${params.data.source} - ${params.data.target} <br/> 共现权重: <span style="color:${params.data.lineStyle.color};font-weight:bold">${params.data.value}</span>`;
+                        }
+                        return `${params.name}`;
+                    },
+                    backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                    borderColor: '#475569',
+                    textStyle: { color: '#e2e8f0' }
+                },
+                series: [{
+                    type: 'graph',
+                    layout: 'force',
+                    data: nodes,
+                    links: edges,
+                    roam: true, // 允许缩放平移
+                    label: { show: true },
+                    zoom: 0.8,
+                    force: {
+                        repulsion: focusNode ? 800 : 300,
+                        gravity: 0.1,
+                        edgeLength: [50, 300],
+                        friction: 0.6
+                    }
+                }]
+            };
+
+            matrixChart.setOption(option);
+            window.addEventListener('resize', () => matrixChart.resize());
+        }
+
+        // 初始化
+        selectOrgan('肺');
+    </script>
+</body>
+</html>
